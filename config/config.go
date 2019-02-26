@@ -10,4 +10,5 @@ type P2PConfig struct {
 	DebugServer      string //p2p test debug server address
 	DebugP2P         bool   // p2p debug flag
 	DebugAddr        string //debug address
+	NAT              string //NAT port mapping mechanism(none|upnp)
 }

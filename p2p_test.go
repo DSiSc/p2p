@@ -7,6 +7,7 @@ import (
 	"github.com/DSiSc/p2p/common"
 	"github.com/DSiSc/p2p/config"
 	"github.com/DSiSc/p2p/message"
+	"github.com/DSiSc/p2p/nat"
 	"github.com/stretchr/testify/assert"
 	"net"
 	"reflect"
@@ -55,7 +56,31 @@ func TestP2P_Start(t *testing.T) {
 		return newTestListener(), nil
 	})
 	err = p2p.Start()
+	time.Sleep(15 * time.Second)
 	assert.Nil(err)
+	p2p.Stop()
+}
+
+func TestP2P_Start1(t *testing.T) {
+	defer monkey.UnpatchAll()
+	assert := assert.New(t)
+	conf := mockConfig()
+	conf.NAT = "upnp"
+	fakeIGD := nat.NewIGDDev()
+	defer fakeIGD.Close()
+	fakeIGD.Listen()
+	fakeIGD.Serve()
+
+	p2p, err := NewP2P(conf, &eventCenter{})
+	assert.Nil(err)
+
+	// mock listen
+	monkey.Patch(net.Listen, func(network, address string) (net.Listener, error) {
+		return newTestListener(), nil
+	})
+	err = p2p.Start()
+	assert.Nil(err)
+	time.Sleep(15 * time.Second)
 	p2p.Stop()
 }
 
