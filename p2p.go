@@ -8,6 +8,7 @@ import (
 	"github.com/DSiSc/p2p/common"
 	"github.com/DSiSc/p2p/config"
 	"github.com/DSiSc/p2p/message"
+	"github.com/DSiSc/p2p/nat"
 	"math/rand"
 	"net"
 	"strconv"
@@ -90,13 +91,15 @@ func (service *P2P) Start() error {
 		return err
 	}
 	service.listener = listener
-
 	go service.startListen(listener) // listen To accept new connection
-	go service.recvHandler()         // message receive handler
-	go service.stallHandler()        // message response timeout handler
-	go service.connectPeers()        // connect To network peers
-	go service.addressHandler()      // request address From neighbor peers
-	go service.heartBeatHandler()    // start heartbeat handler
+	if "" != service.config.NAT {
+		go service.addPortMapping(int(netAddr.Port)) // add nat port mapping
+	}
+	go service.recvHandler()      // message receive handler
+	go service.stallHandler()     // message response timeout handler
+	go service.connectPeers()     // connect To network peers
+	go service.addressHandler()   // request address From neighbor peers
+	go service.heartBeatHandler() // start heartbeat handler
 
 	service.isRunning = 1
 
@@ -152,7 +155,7 @@ func (service *P2P) Stop() {
 	}
 }
 
-// recvHandler listen To accept connection From inbound peer.
+// listen To accept connection From inbound peer.
 func (service *P2P) startListen(listener net.Listener) {
 	for {
 		// listen To accept new connection
@@ -187,6 +190,45 @@ func (service *P2P) startListen(listener net.Listener) {
 			continue
 		}
 		go service.initInbondPeer(peer)
+	}
+}
+
+const (
+	mapDesc           = "justitia nat port mapping"
+	mapProtocol       = "tcp"
+	mapLifeTimeout    = 20 * time.Minute
+	mapUpdateInterval = 15 * time.Minute
+)
+
+// add a port mapping and keeps it alive until c is closed.
+func (service *P2P) addPortMapping(localPort int) {
+	m := nat.DiscoverUPnPDevice()
+	if m == nil {
+		log.Error("Couldn't find Internet Gateway Device")
+		return
+	}
+	refresh := time.NewTimer(mapUpdateInterval)
+	defer func() {
+		log.Debug("Deleting port mapping")
+		refresh.Stop()
+		m.DeletePortMapping(mapProtocol, localPort, localPort)
+	}()
+	if err := m.AddPortMapping(mapProtocol, localPort, localPort, mapDesc, mapLifeTimeout); err != nil {
+		log.Warn("Couldn't add port mapping, as: %v", err)
+	} else {
+		log.Info("Mapped network port")
+	}
+	for {
+		select {
+		case <-service.quitChan:
+			return
+		case <-refresh.C:
+			log.Debug("Refreshing port mapping")
+			if err := m.AddPortMapping(mapProtocol, localPort, localPort, mapDesc, mapLifeTimeout); err != nil {
+				log.Warn("Couldn't add port mapping, as: ", err)
+			}
+			refresh.Reset(mapUpdateInterval)
+		}
 	}
 }
 
