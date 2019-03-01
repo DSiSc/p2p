@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"errors"
+	"fmt"
 	"github.com/DSiSc/craft/types"
 	"github.com/DSiSc/monkey"
 	"github.com/DSiSc/p2p/common"
@@ -34,6 +35,15 @@ func mockPeer(serverAddr, addr *common.NetAddress, outBound, persistent bool, ms
 	monkey.PatchInstanceMethod(reflect.TypeOf(peer), "Stop", func(peer *Peer) {
 	})
 	return peer
+}
+
+func mockConn() net.Conn {
+	conn := newTestConn()
+	monkey.PatchInstanceMethod(reflect.TypeOf(conn), "RemoteAddr", func(*testConn) net.Addr {
+		addr, _ := net.ResolveTCPAddr("", "192.168.1.1:8088")
+		return addr
+	})
+	return conn
 }
 
 func TestNewP2P(t *testing.T) {
@@ -389,6 +399,107 @@ func TestP2P_Gather(t *testing.T) {
 		}
 	case <-timer.C:
 		assert.Nil(errors.New("failed To connect persistent peer"))
+	}
+	p2p.Stop()
+}
+
+// test dns seed connect to normal peers
+func TestP2P_DNSSeed(t *testing.T) {
+	defer monkey.UnpatchAll()
+	assert := assert.New(t)
+	conf := mockConfig()
+	conf.SeedMode = true
+
+	p2p, err := NewP2P(conf, &eventCenter{})
+	assert.Nil(err)
+	// mock listener
+	serverAddr, _ := common.ParseNetAddress(conf.ListenAddress)
+	monkey.Patch(net.Listen, func(network, address string) (net.Listener, error) {
+		return newTestListener(), nil
+	})
+
+	// mock normal peer
+	addr := mockAddress()
+	mockPeer := mockPeer(serverAddr, addr, true, false, p2p.internalChan, nil)
+	monkey.Patch(NewOutboundPeer, func(serverAddr, addr *common.NetAddress, persistent bool, msgChan chan<- *InternalMsg) *Peer {
+		return mockPeer
+	})
+
+	//mock address manager
+	p2p.addrManager.AddAddress(addr)
+	monkey.PatchInstanceMethod(reflect.TypeOf(p2p.addrManager), "NeedMoreAddrs", func(*AddressManager) bool {
+		return false
+	})
+	// start p2p
+	err = p2p.Start()
+	assert.Nil(err)
+
+	// Waiting to connect to normal peer
+	timeoutTricker := time.NewTicker(time.Second)
+	<-timeoutTricker.C
+	if peer, ok := p2p.pendingPeers.Load(mockPeer.GetAddr().IP); ok {
+		select {
+		case pmsg := <-peer.(*Peer).sendChan:
+			switch pmsg.Payload.(type) {
+			case *message.AddrReq:
+			default:
+				assert.Nil(errors.New("read addreq message failed"))
+			}
+		default:
+			assert.Nil(errors.New("read addreq message failed"))
+		}
+	} else {
+		assert.Nil(errors.New("failed to connect normal peer"))
+	}
+	p2p.Stop()
+}
+
+// test normal peer connect to dns seed
+func TestP2P_DNSSeed1(t *testing.T) {
+	defer monkey.UnpatchAll()
+	assert := assert.New(t)
+	conf := mockConfig()
+	conf.SeedMode = true
+
+	p2p, err := NewP2P(conf, &eventCenter{})
+	assert.Nil(err)
+	// mock listener
+	serverAddr, _ := common.ParseNetAddress(conf.ListenAddress)
+	listener := newTestListener()
+	monkey.Patch(net.Listen, func(network, address string) (net.Listener, error) {
+		return listener, nil
+	})
+
+	// mock normal peer
+	addr := mockAddress()
+	mockPeer := mockPeer(serverAddr, addr, false, false, p2p.internalChan, nil)
+	monkey.Patch(NewInboundPeer, func(serverAddr, addr *common.NetAddress, msgChan chan<- *InternalMsg, conn net.Conn) *Peer {
+		return mockPeer
+	})
+
+	//mock address manager
+	monkey.PatchInstanceMethod(reflect.TypeOf(p2p.addrManager), "NeedMoreAddrs", func(*AddressManager) bool {
+		return false
+	})
+	// start p2p
+	err = p2p.Start()
+	assert.Nil(err)
+
+	// mock new inbound peer
+	listener.connChan <- mockConn()
+	timeoutTricker := time.NewTicker(time.Second)
+	<-timeoutTricker.C
+	// wait address message
+	select {
+	case pmsg := <-mockPeer.sendChan:
+		switch pmsg.Payload.(type) {
+		case *message.Addr:
+			fmt.Println(pmsg)
+		default:
+			assert.Nil(errors.New("read addr message failed"))
+		}
+	default:
+		assert.Nil(errors.New("read addr message failed"))
 	}
 	p2p.Stop()
 }

@@ -240,7 +240,17 @@ func (service *P2P) initInbondPeer(peer *Peer) {
 		return
 	}
 	service.addrManager.AddAddress(peer.GetAddr())
-	service.addInBoundPeer(peer)
+	if service.config.SeedMode {
+		// seed node close the connection after sending address message to new peer
+		addrs := service.addrManager.GetAddresses()
+		addrMsg := &message.Addr{
+			NetAddresses: addrs,
+		}
+		service.sendMsgSync(peer, addrMsg)
+		peer.Stop()
+	} else {
+		service.addInBoundPeer(peer)
+	}
 }
 
 // add pending peer
@@ -472,6 +482,10 @@ RETRY:
 			}
 		}
 	} else {
+		if service.config.SeedMode {
+			addReq := &message.AddrReq{}
+			service.sendMsgAsync(peer, addReq)
+		}
 		service.addOutBoundPeer(peer)
 		service.removePendingPeer(peer)
 	}
@@ -517,7 +531,7 @@ func (service *P2P) addressHandler() {
 			peers := service.GetPeers()
 			if peers != nil && len(peers) > 0 {
 				addReq := &message.AddrReq{}
-				service.sendMsg(peers[rand.Intn(len(peers))], addReq)
+				service.sendMsgAsync(peers[rand.Intn(len(peers))], addReq)
 			}
 		}
 
@@ -545,7 +559,7 @@ func (service *P2P) recvHandler() {
 				}
 				peer := service.GetPeerByAddress(msg.From)
 				if peer != nil {
-					service.sendMsg(peer, pingMsg)
+					service.sendMsgAsync(peer, pingMsg)
 				}
 			case *message.PongMsg:
 				peer := service.GetPeerByAddress(msg.From)
@@ -559,11 +573,14 @@ func (service *P2P) recvHandler() {
 				}
 				peer := service.GetPeerByAddress(msg.From)
 				if peer != nil {
-					service.sendMsg(peer, addrMsg)
+					service.sendMsgAsync(peer, addrMsg)
 				}
 			case *message.Addr:
 				addrMsg := msg.Payload.(*message.Addr)
 				service.addrManager.AddAddresses(addrMsg.NetAddresses)
+				if service.config.SeedMode {
+					service.stopPeer(msg.From)
+				}
 			default:
 				service.msgChan <- msg
 				if service.config.DebugP2P {
@@ -598,7 +615,7 @@ func (service *P2P) BroadCast(msg message.Message) {
 		func(key, value interface{}) bool {
 			peer := value.(*Peer)
 			if !peer.KnownMsg(msg) {
-				go service.sendMsg(peer, msg)
+				go service.sendMsgAsync(peer, msg)
 			}
 			return true
 		},
@@ -607,7 +624,7 @@ func (service *P2P) BroadCast(msg message.Message) {
 		func(key, value interface{}) bool {
 			peer := value.(*Peer)
 			if !peer.KnownMsg(msg) {
-				go service.sendMsg(peer, msg)
+				go service.sendMsgAsync(peer, msg)
 			}
 			return true
 		},
@@ -628,7 +645,7 @@ func (service *P2P) SendMsg(peerAddr *common.NetAddress, msg message.Message) er
 		log.Error("no active peer with address %s", peerAddr.ToString())
 		return fmt.Errorf("no active peer with address %s", peerAddr.ToString())
 	}
-	return service.sendMsg(peer, msg)
+	return service.sendMsgAsync(peer, msg)
 }
 
 // MessageChan get p2p's message channel, (Messages sent To the server will eventually be placed in the message channel)
@@ -657,22 +674,42 @@ func (service *P2P) Gather(peerFilter PeerFilter, reqMsg message.Message) error 
 
 	for _, peer := range peers {
 		if peerFilter(peer.GetState()) {
-			service.sendMsg(peer, reqMsg)
+			service.sendMsgAsync(peer, reqMsg)
 		}
 	}
 	return nil
 }
 
+// sendMsgAsync send message asynchronously To a peer.
+func (service *P2P) sendMsgAsync(peer *Peer, msg message.Message) error {
+	return service.sendMsg(peer, msg, false)
+}
+
+// sendMsgSync send message synchronously To a peer.
+func (service *P2P) sendMsgSync(peer *Peer, msg message.Message) error {
+	return service.sendMsg(peer, msg, true)
+}
+
 // sendMsg send message To a peer.
-func (service *P2P) sendMsg(peer *Peer, msg message.Message) error {
+func (service *P2P) sendMsg(peer *Peer, msg message.Message, sync bool) error {
 	message := &InternalMsg{
 		service.addrManager.OurAddresses()[0],
 		peer.GetAddr(),
 		msg,
 		nil,
 	}
+	if sync {
+		message.RespTo = make(chan interface{})
+	}
 	peer.Channel() <- message
 	service.registerPendingResp(message)
+
+	if message.RespTo != nil {
+		resp := <-message.RespTo
+		if _, ok := resp.(error); ok {
+			return resp.(error)
+		}
+	}
 	return nil
 }
 
