@@ -372,7 +372,9 @@ func removePendingRespMsg(pendingQueue map[*common.NetAddress]map[message.Messag
 // connectPeers connect To peers in p2p network
 func (service *P2P) connectPeers() {
 	service.connectPersistentPeers()
-	service.connectDnsSeeds()
+	if "" == service.config.PersistentPeers && !service.config.DisableDNSSeed {
+		service.connectDnsSeeds()
+	}
 	service.connectNormalPeers()
 }
 
@@ -399,7 +401,22 @@ func (service *P2P) connectPersistentPeers() {
 
 // connect To dns seeds
 func (service *P2P) connectDnsSeeds() {
-	//TODO
+	if "" != service.config.DNSSeeds {
+		log.Info("connect to dns seeds")
+		dnsSeeds := strings.Split(service.config.DNSSeeds, ",")
+		for _, dnsSeed := range dnsSeeds {
+			netAddr, err := common.ParseNetAddress(dnsSeed)
+			if err != nil {
+				log.Warn("invalid dns seed address")
+				continue
+			}
+			if service.addrManager.IsOurAddress(netAddr) {
+				continue
+			}
+			peer := NewOutboundPeer(service.addrManager.OurAddresses()[0], netAddr, false, service.internalChan)
+			go service.connectPeer(peer)
+		}
+	}
 }
 
 // connect To dns seeds

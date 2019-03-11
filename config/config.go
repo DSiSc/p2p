@@ -12,4 +12,6 @@ type P2PConfig struct {
 	DebugAddr        string //debug address
 	NAT              string //NAT port mapping mechanism(none|upnp)
 	SeedMode         bool   // whether run as dns seed(default false)
+	DisableDNSSeed   bool   //Disable DNS seeding for peers
+	DNSSeeds         string //list of DNS seeds for the network that are used as one method to discover peers
 }
