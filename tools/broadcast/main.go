@@ -34,9 +34,9 @@ func main() {
 		PluginName: blockchain.PLUGIN_MEMDB,
 	}
 	blockchain.InitBlockChain(chainConf, &tools.P2PTestEventCenter{})
-	var addrBookPath, listenAddress, persistentPeers, localAddrStr, displayServer string
+	var addrBookPath, listenAddress, persistentPeers, localAddrStr, displayServer, dnsSeeds string
 	var maxConnOutBound, maxConnInBound int
-	var traceMaster bool
+	var traceMaster, disableDNSSeed, seedMode bool
 	flagSet := flag.NewFlagSet("broadcast", flag.ExitOnError)
 	flagSet.StringVar(&addrBookPath, "path", "./address_book.json", "Address book file path")
 	flagSet.StringVar(&listenAddress, "listen", "tcp://0.0.0.0:8888", "Listen address")
@@ -46,6 +46,10 @@ func main() {
 	flagSet.StringVar(&localAddrStr, "local_addr", "", "local address to identify this peer")
 	flagSet.StringVar(&displayServer, "display_server", "localhost:8080", "Statistics server address")
 	flagSet.BoolVar(&traceMaster, "master", false, "Master peer")
+	flagSet.BoolVar(&disableDNSSeed, "disable_dns", true, "disable DNS seeding for peers(default true)")
+	flagSet.BoolVar(&seedMode, "seed_mode", false, "whether run as dns seed(default false)")
+	flagSet.StringVar(&dnsSeeds, "dns_seeds", "", "list of DNS seeds ")
+
 	flagSet.Usage = func() {
 		fmt.Println(`Justitia blockchain p2p test tool.
 
@@ -69,6 +73,9 @@ Examples:
 		DebugServer:      displayServer,
 		DebugP2P:         true,
 		DebugAddr:        localAddrStr,
+		SeedMode:         seedMode,
+		DisableDNSSeed:   disableDNSSeed,
+		DNSSeeds:         dnsSeeds,
 	}
 
 	// listen address
