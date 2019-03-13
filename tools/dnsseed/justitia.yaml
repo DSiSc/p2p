@@ -18,6 +18,9 @@ general:
 
   # max connection in bound
   maxConnInBound: 48
+
+  # service type(0:SFNodeTX, 1:SFNodeBlockBroadCast, 2:SFNodeBlockSyncer, 3:SFNodeBroadCastTest)
+  Service: 0
 ################################################################################
 #
 #   SECTION: log

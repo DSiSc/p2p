@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/DSiSc/craft/log"
+	"github.com/DSiSc/p2p/config"
 	"github.com/spf13/viper"
 	"math"
 	"os"
@@ -23,6 +24,7 @@ const (
 	AddrBookFilePath = "general.addrBookFilePath"
 	MaxConnOutBound  = "general.maxConnOutBound"
 	MaxConnInBound   = "general.maxConnInBound"
+	Service          = "general.Service"
 
 	// Log Setting
 	LogTimeFieldFormat = "logging.timeFieldFormat"
@@ -48,11 +50,12 @@ type SysConfig struct {
 }
 
 type NodeConfig struct {
-	AddrBookFilePath string     // address book file path
-	ListenAddress    string     // server listen address
-	MaxConnOutBound  int        // max connection out bound
-	MaxConnInBound   int        // max connection in bound
-	Logger           log.Config // log setting
+	AddrBookFilePath string             // address book file path
+	ListenAddress    string             // server listen address
+	MaxConnOutBound  int                // max connection out bound
+	MaxConnInBound   int                // max connection in bound
+	Service          config.ServiceFlag // service tag
+	Logger           log.Config         // log setting
 }
 
 type Config struct {
@@ -60,59 +63,61 @@ type Config struct {
 	maps     map[string]interface{}
 }
 
-func LoadConfig() (config *viper.Viper) {
-	config = viper.New()
+func LoadConfig() (vp *viper.Viper) {
+	vp = viper.New()
 	// for environment variables
-	config.SetEnvPrefix(ConfigPrefix)
-	config.AutomaticEnv()
+	vp.SetEnvPrefix(ConfigPrefix)
+	vp.AutomaticEnv()
 	replacer := strings.NewReplacer(".", "_")
-	config.SetEnvKeyReplacer(replacer)
+	vp.SetEnvKeyReplacer(replacer)
 
-	config.SetConfigName("justitia")
+	vp.SetConfigName("justitia")
 	homePath, _ := Home()
-	config.AddConfigPath(fmt.Sprintf("%s/.justitia", homePath))
-	// Path to look for the config file in based on GOPATH
+	vp.AddConfigPath(fmt.Sprintf("%s/.justitia", homePath))
+	// Path to look for the vp file in based on GOPATH
 	goPath := os.Getenv("GOPATH")
 	for _, p := range filepath.SplitList(goPath) {
-		config.AddConfigPath(filepath.Join(p, "src/github.com/DSiSc/p2p/tools/dnsseed"))
+		vp.AddConfigPath(filepath.Join(p, "src/github.com/DSiSc/p2p/tools/dnsseed"))
 	}
 
-	err := config.ReadInConfig()
+	err := vp.ReadInConfig()
 	if err != nil {
-		panic(fmt.Errorf("error reading plugin config: %s", err))
+		panic(fmt.Errorf("error reading plugin vp: %s", err))
 	}
 	return
 }
 
 func NewNodeConfig() NodeConfig {
-	config := LoadConfig()
-	listenAddr := config.GetString(ListenAddress)
-	addrBookFilePath := config.GetString(AddrBookFilePath)
-	maxConnOutBound := config.GetInt(MaxConnOutBound)
-	maxConnInBound := config.GetInt(MaxConnInBound)
-	logConf := GetLogSetting(config)
+	vp := LoadConfig()
+	listenAddr := vp.GetString(ListenAddress)
+	addrBookFilePath := vp.GetString(AddrBookFilePath)
+	maxConnOutBound := vp.GetInt(MaxConnOutBound)
+	maxConnInBound := vp.GetInt(MaxConnInBound)
+	service := vp.GetInt(Service)
+	logConf := GetLogSetting(vp)
 	return NodeConfig{
 		ListenAddress:    listenAddr,
 		AddrBookFilePath: addrBookFilePath,
 		MaxConnOutBound:  maxConnOutBound,
 		MaxConnInBound:   maxConnInBound,
+		Service:          config.ServiceFlag(service),
 		Logger:           logConf,
 	}
 }
 
-func GetLogSetting(conf *viper.Viper) log.Config {
-	logTimestampFormat := conf.GetString(LogTimeFieldFormat)
-	logConsoleEnabled := conf.GetBool(LogConsoleEnabled)
-	logConsoleLevel := conf.GetInt(LogConsoleLevel)
-	logConsoleFormat := conf.GetString(LogConsoleFormat)
-	logConsoleCaller := conf.GetBool(LogConsoleCaller)
-	logConsoleHostname := conf.GetBool(LogConsoleHostname)
-	logFileEnabled := conf.GetBool(LogFileEnabled)
-	logFilePath := conf.GetString(LogFilePath)
-	logFileLevel := conf.GetInt(LogFileLevel)
-	logFileFormat := conf.GetString(LogFileFormat)
-	logFileCaller := conf.GetBool(LogFileCaller)
-	logFileHostname := conf.GetBool(LogFileHostname)
+func GetLogSetting(vp *viper.Viper) log.Config {
+	logTimestampFormat := vp.GetString(LogTimeFieldFormat)
+	logConsoleEnabled := vp.GetBool(LogConsoleEnabled)
+	logConsoleLevel := vp.GetInt(LogConsoleLevel)
+	logConsoleFormat := vp.GetString(LogConsoleFormat)
+	logConsoleCaller := vp.GetBool(LogConsoleCaller)
+	logConsoleHostname := vp.GetBool(LogConsoleHostname)
+	logFileEnabled := vp.GetBool(LogFileEnabled)
+	logFilePath := vp.GetString(LogFilePath)
+	logFileLevel := vp.GetInt(LogFileLevel)
+	logFileFormat := vp.GetString(LogFileFormat)
+	logFileCaller := vp.GetBool(LogFileCaller)
+	logFileHostname := vp.GetBool(LogFileHostname)
 
 	consoleAppender := &log.Appender{
 		Enabled:      logConsoleEnabled,

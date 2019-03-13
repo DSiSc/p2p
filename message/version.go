@@ -1,11 +1,15 @@
 package message
 
-import "github.com/DSiSc/craft/types"
+import (
+	"github.com/DSiSc/craft/types"
+	"github.com/DSiSc/p2p/config"
+)
 
 // Version version message
 type Version struct {
-	Version string `json:"version"`
-	PortMe  int32  `json:"port_me"`
+	Version string             `json:"version"`
+	PortMe  int32              `json:"port_me"`
+	Service config.ServiceFlag `json:"service"`
 }
 
 func (this *Version) MsgId() types.Hash {

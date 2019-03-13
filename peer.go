@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"github.com/DSiSc/craft/log"
 	"github.com/DSiSc/p2p/common"
+	"github.com/DSiSc/p2p/config"
 	"github.com/DSiSc/p2p/message"
-	"github.com/DSiSc/p2p/version"
 	"net"
 	"strconv"
 	"sync"
@@ -20,14 +20,20 @@ const (
 
 )
 
+// PeerCom provides the basic information of a peer
+type PeerCom struct {
+	version    string             // version info
+	addr       *common.NetAddress // peer address
+	state      uint64             //current state of this peer
+	outBound   atomic.Value       // whether peer is out bound peer
+	persistent bool               // whether peer is persistent peer
+	service    config.ServiceFlag // service peer supported
+}
+
 // Peer represent the peer
 type Peer struct {
-	version      uint32
-	outBound     atomic.Value
-	persistent   bool
-	serverAddr   *common.NetAddress
-	addr         *common.NetAddress
-	state        uint64    //current state of this peer
+	PeerCom
+	serverInfo   *PeerCom
 	conn         *PeerConn //connection To this peer
 	internalChan chan message.Message
 	sendChan     chan *InternalMsg
@@ -39,21 +45,23 @@ type Peer struct {
 }
 
 // NewInboundPeer new inbound peer instance
-func NewInboundPeer(serverAddr, addr *common.NetAddress, msgChan chan<- *InternalMsg, conn net.Conn) *Peer {
-	return newPeer(serverAddr, addr, false, false, msgChan, conn)
+func NewInboundPeer(serverInfo *PeerCom, addr *common.NetAddress, msgChan chan<- *InternalMsg, conn net.Conn) *Peer {
+	return newPeer(serverInfo, addr, false, false, msgChan, conn)
 }
 
 // NewInboundPeer new outbound peer instance
-func NewOutboundPeer(serverAddr, addr *common.NetAddress, persistent bool, msgChan chan<- *InternalMsg) *Peer {
-	return newPeer(serverAddr, addr, true, persistent, msgChan, nil)
+func NewOutboundPeer(serverInfo *PeerCom, addr *common.NetAddress, persistent bool, msgChan chan<- *InternalMsg) *Peer {
+	return newPeer(serverInfo, addr, true, persistent, msgChan, nil)
 }
 
 // create a peer instance.
-func newPeer(serverAddr, addr *common.NetAddress, outBound, persistent bool, msgChan chan<- *InternalMsg, conn net.Conn) *Peer {
+func newPeer(serverInfo *PeerCom, addr *common.NetAddress, outBound, persistent bool, msgChan chan<- *InternalMsg, conn net.Conn) *Peer {
 	peer := &Peer{
-		serverAddr:   serverAddr,
-		addr:         addr,
-		persistent:   persistent,
+		PeerCom: PeerCom{
+			addr:       addr,
+			persistent: persistent,
+		},
+		serverInfo:   serverInfo,
 		internalChan: make(chan message.Message),
 		sendChan:     make(chan *InternalMsg),
 		recvChan:     msgChan,
@@ -159,8 +167,8 @@ func (peer *Peer) handShakeWithInBoundPeer() error {
 // send version message To this peer.
 func (peer *Peer) sendVersionMessage() error {
 	vmsg := &message.Version{
-		Version: version.Version,
-		PortMe:  peer.serverAddr.Port,
+		Version: peer.serverInfo.version,
+		PortMe:  peer.serverInfo.addr.Port,
 	}
 	return peer.conn.SendMessage(vmsg)
 }
@@ -177,8 +185,11 @@ func (peer *Peer) readVersionMessage() error {
 	if err != nil {
 		return err
 	}
+	vmsg := msg.(*message.Version)
+	if vmsg.Service != peer.serverInfo.service {
+		return errors.New("Incompatible service ")
+	}
 	if !peer.outBound.Load().(bool) {
-		vmsg := msg.(*message.Version)
 		peer.addr.Port = vmsg.PortMe
 	}
 	return nil
@@ -276,7 +287,7 @@ func (peer *Peer) recvHandler() {
 		default:
 			imsg := &InternalMsg{
 				From:    peer.addr,
-				To:      peer.serverAddr,
+				To:      peer.serverInfo.addr,
 				Payload: msg,
 			}
 			peer.recvChan <- imsg
@@ -368,7 +379,7 @@ func (peer *Peer) disconnectNotify(err error) {
 	}
 	msg := &InternalMsg{
 		From:    peer.addr,
-		To:      peer.serverAddr,
+		To:      peer.serverInfo.addr,
 		Payload: disconnectMsg,
 	}
 	peer.recvChan <- msg

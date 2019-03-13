@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/DSiSc/monkey"
 	"github.com/DSiSc/p2p/common"
+	"github.com/DSiSc/p2p/config"
 	"github.com/DSiSc/p2p/message"
 	"github.com/DSiSc/p2p/version"
 	"github.com/stretchr/testify/assert"
@@ -13,13 +14,18 @@ import (
 	"time"
 )
 
-func mockServerAddress() *common.NetAddress {
+func mockServerInfo() *PeerCom {
 	addr := common.NetAddress{
 		Protocol: "tcp",
 		IP:       "192.168.1.100",
 		Port:     8080,
 	}
-	return &addr
+	serverInfo := &PeerCom{
+		version: version.Version,
+		service: config.SFNodeTX,
+		addr:    &addr,
+	}
+	return serverInfo
 }
 
 func mockAddress() *common.NetAddress {
@@ -42,7 +48,7 @@ func mockPeerConn() *PeerConn {
 func TestNewInboundPeer(t *testing.T) {
 	assert := assert.New(t)
 	msgChan := make(chan *InternalMsg)
-	peer := NewInboundPeer(mockServerAddress(), mockAddress(), msgChan, &testConn{})
+	peer := NewInboundPeer(mockServerInfo(), mockAddress(), msgChan, &testConn{})
 	assert.NotNil(peer)
 	assert.False(peer.outBound.Load().(bool))
 }
@@ -50,7 +56,7 @@ func TestNewInboundPeer(t *testing.T) {
 func TestNewOutboundPeer(t *testing.T) {
 	assert := assert.New(t)
 	msgChan := make(chan *InternalMsg)
-	peer := NewOutboundPeer(mockServerAddress(), mockAddress(), true, msgChan)
+	peer := NewOutboundPeer(mockServerInfo(), mockAddress(), true, msgChan)
 	assert.NotNil(peer)
 	assert.True(peer.persistent)
 	assert.True(peer.outBound.Load().(bool))
@@ -65,6 +71,7 @@ func TestPeer_Start(t *testing.T) {
 		&message.Version{
 			Version: version.Version,
 			PortMe:  mockAddress().Port,
+			Service: config.SFNodeTX,
 		},
 		&message.VersionAck{},
 		&message.Addr{
@@ -76,7 +83,7 @@ func TestPeer_Start(t *testing.T) {
 	monkey.Patch(NewPeerConn, func(conn net.Conn, recvChan chan message.Message) *PeerConn { return peerConn })
 	// start inbound peer
 	msgChan := make(chan *InternalMsg)
-	peer := NewInboundPeer(mockServerAddress(), mockAddress(), msgChan, newTestConn())
+	peer := NewInboundPeer(mockServerInfo(), mockAddress(), msgChan, newTestConn())
 	assert.NotNil(peer)
 	// mock receive message From peerConn
 	go func(msgs []message.Message) {
@@ -108,11 +115,12 @@ func TestPeer_Start1(t *testing.T) {
 
 	assert := assert.New(t)
 
-	serverAddr := mockServerAddress()
+	serverAddr := mockServerInfo()
 	msgs := []message.Message{
 		&message.Version{
 			Version: version.Version,
 			PortMe:  mockAddress().Port,
+			Service: config.SFNodeTX,
 		},
 		&message.VersionAck{},
 		&message.Addr{
@@ -156,7 +164,7 @@ func TestPeer_Start1(t *testing.T) {
 func TestPeer_IsPersistent(t *testing.T) {
 	assert := assert.New(t)
 	msgChan := make(chan *InternalMsg)
-	peer := NewOutboundPeer(mockServerAddress(), mockAddress(), true, msgChan)
+	peer := NewOutboundPeer(mockServerInfo(), mockAddress(), true, msgChan)
 	assert.NotNil(peer)
 	assert.True(peer.IsPersistent())
 }
@@ -165,7 +173,7 @@ func TestPeer_GetAddr(t *testing.T) {
 	assert := assert.New(t)
 	msgChan := make(chan *InternalMsg)
 	addr := mockAddress()
-	peer := NewOutboundPeer(mockServerAddress(), addr, true, msgChan)
+	peer := NewOutboundPeer(mockServerInfo(), addr, true, msgChan)
 	assert.NotNil(peer)
 	assert.True(addr.Equal(peer.GetAddr()))
 }
@@ -173,7 +181,7 @@ func TestPeer_GetAddr(t *testing.T) {
 func TestPeer_CurrentState(t *testing.T) {
 	assert := assert.New(t)
 	msgChan := make(chan *InternalMsg)
-	peer := NewOutboundPeer(mockServerAddress(), mockAddress(), true, msgChan)
+	peer := NewOutboundPeer(mockServerInfo(), mockAddress(), true, msgChan)
 	assert.NotNil(peer)
 	assert.Equal(uint64(0), peer.CurrentState())
 }
@@ -199,7 +207,7 @@ func TestPeer_Channel(t *testing.T) {
 
 	// start inbound peer
 	msgChan := make(chan *InternalMsg)
-	peer := NewInboundPeer(mockServerAddress(), mockAddress(), msgChan, newTestConn())
+	peer := NewInboundPeer(mockServerInfo(), mockAddress(), msgChan, newTestConn())
 	assert.NotNil(peer)
 	// mock receive message From peerConn
 	go func(msgs []message.Message) {
@@ -243,7 +251,7 @@ func TestPeer_Channel(t *testing.T) {
 func TestPeer_SetState(t *testing.T) {
 	assert := assert.New(t)
 	msgChan := make(chan *InternalMsg)
-	peer := NewInboundPeer(mockServerAddress(), mockAddress(), msgChan, &testConn{})
+	peer := NewInboundPeer(mockServerInfo(), mockAddress(), msgChan, &testConn{})
 	assert.NotNil(peer)
 
 	peer.SetState(64)

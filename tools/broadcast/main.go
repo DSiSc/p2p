@@ -76,6 +76,7 @@ Examples:
 		SeedMode:         seedMode,
 		DisableDNSSeed:   disableDNSSeed,
 		DNSSeeds:         dnsSeeds,
+		Service:          p2pconf.SFNodeBroadCastTest,
 	}
 
 	// listen address

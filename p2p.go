@@ -9,6 +9,7 @@ import (
 	"github.com/DSiSc/p2p/config"
 	"github.com/DSiSc/p2p/message"
 	"github.com/DSiSc/p2p/nat"
+	"github.com/DSiSc/p2p/version"
 	"math/rand"
 	"net"
 	"strconv"
@@ -30,6 +31,7 @@ type PeerFilter func(peerState uint64) bool
 
 // P2P is p2p service implementation.
 type P2P struct {
+	PeerCom
 	config        *config.P2PConfig
 	listener      net.Listener // net listener
 	internalChan  chan *InternalMsg
@@ -38,7 +40,6 @@ type P2P struct {
 	quitChan      chan struct{}
 	isRunning     int32
 	addrManager   *AddressManager
-	state         uint64 // service's state
 	pendingPeers  sync.Map
 	outbountPeers sync.Map
 	inboundPeers  sync.Map
@@ -49,8 +50,18 @@ type P2P struct {
 
 // NewP2P create a p2p service instance
 func NewP2P(config *config.P2PConfig, center types.EventCenter) (*P2P, error) {
+	netAddr, err := common.ParseNetAddress(config.ListenAddress)
+	if err != nil {
+		log.Error("invalid listen address")
+		return nil, err
+	}
 	addrManger := NewAddressManager(config.AddrBookFilePath)
 	return &P2P{
+		PeerCom: PeerCom{
+			version: version.Version,
+			addr:    netAddr,
+			service: config.Service,
+		},
 		config:       config,
 		addrManager:  addrManger,
 		msgChan:      make(chan *InternalMsg),
@@ -73,27 +84,21 @@ func (service *P2P) Start() error {
 	}
 	service.addrManager.Start()
 
-	netAddr, err := common.ParseNetAddress(service.config.ListenAddress)
-	if err != nil {
-		log.Error("invalid listen address")
-		return err
-	}
-
-	err = service.addrManager.AddLocalAddress(netAddr.Port)
+	err := service.addrManager.AddLocalAddress(service.addr.Port)
 	if err != nil {
 		log.Error("failed To add local address To address manager, as %v", err)
 		return err
 	}
 
-	listener, err := net.Listen(netAddr.Protocol, netAddr.IP+":"+strconv.Itoa(int(netAddr.Port)))
+	listener, err := net.Listen(service.addr.Protocol, service.addr.IP+":"+strconv.Itoa(int(service.addr.Port)))
 	if err != nil {
-		log.Error("failed To create listener with address: %s, as: %v", netAddr.ToString(), err)
+		log.Error("failed To create listener with address: %s, as: %v", service.addr.ToString(), err)
 		return err
 	}
 	service.listener = listener
 	go service.startListen(listener) // listen To accept new connection
 	if "" != service.config.NAT {
-		go service.addPortMapping(int(netAddr.Port)) // add nat port mapping
+		go service.addPortMapping(int(service.addr.Port)) // add nat port mapping
 	}
 	go service.recvHandler()      // message receive handler
 	go service.stallHandler()     // message response timeout handler
@@ -181,7 +186,7 @@ func (service *P2P) startListen(listener net.Listener) {
 		}
 
 		// init an inbound peer
-		peer := NewInboundPeer(service.addrManager.OurAddresses()[0], addr, service.internalChan, conn)
+		peer := NewInboundPeer(&service.PeerCom, addr, service.internalChan, conn)
 		//peer := NewInboundPeer(service.addrManager.OurAddresses(), addr, service.internalChan, conn)
 		err = service.addPendingPeer(peer)
 		if err != nil {
@@ -393,7 +398,7 @@ func (service *P2P) connectPersistentPeers() {
 			}
 
 			service.addrManager.AddAddress(netAddr) //record address
-			peer := NewOutboundPeer(service.addrManager.OurAddresses()[0], netAddr, true, service.internalChan)
+			peer := NewOutboundPeer(&service.PeerCom, netAddr, true, service.internalChan)
 			go service.connectPeer(peer)
 		}
 	}
@@ -413,7 +418,7 @@ func (service *P2P) connectDnsSeeds() {
 			if service.addrManager.IsOurAddress(netAddr) {
 				continue
 			}
-			peer := NewOutboundPeer(service.addrManager.OurAddresses()[0], netAddr, false, service.internalChan)
+			peer := NewOutboundPeer(&service.PeerCom, netAddr, false, service.internalChan)
 			go service.connectPeer(peer)
 		}
 	}
@@ -432,7 +437,7 @@ func (service *P2P) connectNormalPeers() {
 					continue
 				}
 				log.Info("start connecting To peer %s", addr.ToString())
-				peer := NewOutboundPeer(service.addrManager.OurAddresses()[0], addr, false, service.internalChan)
+				peer := NewOutboundPeer(&service.PeerCom, addr, false, service.internalChan)
 				go service.connectPeer(peer)
 			}
 		} else {
@@ -449,7 +454,7 @@ func (service *P2P) connectNormalPeers() {
 					continue
 				}
 				log.Info("start connecting To peer %s", addr.ToString())
-				peer := NewOutboundPeer(service.addrManager.OurAddresses()[0], addr, false, service.internalChan)
+				peer := NewOutboundPeer(&service.PeerCom, addr, false, service.internalChan)
 				go service.connectPeer(peer)
 			}
 		}
@@ -789,6 +794,17 @@ func (service *P2P) GetPeerByAddress(addr *common.NetAddress) *Peer {
 	}
 	if value, ok := service.outbountPeers.Load(addr.ToString()); ok {
 		return value.(*Peer)
+	}
+	return nil
+}
+
+//	used to verify peer compatibility
+func (service *P2P) onVersion(versionMsg *message.Version) error {
+	if !version.Accept(versionMsg.Version) {
+		return errors.New("Incompatible service ")
+	}
+	if versionMsg.Service != service.service {
+		return errors.New("Incompatible service ")
 	}
 	return nil
 }
