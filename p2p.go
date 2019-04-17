@@ -489,6 +489,7 @@ RETRY:
 	err := service.addPendingPeer(peer)
 	if err != nil {
 		log.Error("failed To add peer %s To pending list, as: %v", peer.GetAddr().ToString(), err)
+		return
 	} else {
 		err = peer.Start()
 	}
