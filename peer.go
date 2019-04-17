@@ -169,6 +169,7 @@ func (peer *Peer) sendVersionMessage() error {
 	vmsg := &message.Version{
 		Version: peer.serverInfo.version,
 		PortMe:  peer.serverInfo.addr.Port,
+		Service: peer.serverInfo.service,
 	}
 	return peer.conn.SendMessage(vmsg)
 }

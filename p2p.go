@@ -191,7 +191,7 @@ func (service *P2P) startListen(listener net.Listener) {
 		err = service.addPendingPeer(peer)
 		if err != nil {
 			conn.Close()
-			log.Error("failed To add peer %s To pending queue, as:%v", peer.GetAddr().ToString(), err)
+			log.Debug("failed To add peer %s To pending queue, as:%v", peer.GetAddr().ToString(), err)
 			continue
 		}
 		go service.initInbondPeer(peer)
@@ -242,6 +242,7 @@ func (service *P2P) initInbondPeer(peer *Peer) {
 	defer service.removePendingPeer(peer)
 	err := peer.Start()
 	if err != nil {
+		log.Error("failed to start inbound peer as: %v", err)
 		return
 	}
 	service.addrManager.AddAddress(peer.GetAddr())
@@ -488,7 +489,7 @@ func (service *P2P) connectPeer(peer *Peer) {
 RETRY:
 	err := service.addPendingPeer(peer)
 	if err != nil {
-		log.Error("failed To add peer %s To pending list, as: %v", peer.GetAddr().ToString(), err)
+		log.Debug("failed To add peer %s To pending list, as: %v", peer.GetAddr().ToString(), err)
 		return
 	} else {
 		err = peer.Start()
@@ -802,10 +803,10 @@ func (service *P2P) GetPeerByAddress(addr *common.NetAddress) *Peer {
 //	used to verify peer compatibility
 func (service *P2P) onVersion(versionMsg *message.Version) error {
 	if !version.Accept(versionMsg.Version) {
-		return errors.New("Incompatible service ")
+		return errors.New("Version not compatible with the server ")
 	}
 	if versionMsg.Service != service.service {
-		return errors.New("Incompatible service ")
+		return errors.New("Service type not compatible with the server ")
 	}
 	return nil
 }
