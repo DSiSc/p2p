@@ -194,7 +194,7 @@ func (service *P2P) startListen(listener net.Listener) {
 			log.Debug("failed To add peer %s To pending queue, as:%v", peer.GetAddr().ToString(), err)
 			continue
 		}
-		go service.initInbondPeer(peer)
+		go service.initInboundPeer(peer)
 	}
 }
 
@@ -238,14 +238,15 @@ func (service *P2P) addPortMapping(localPort int) {
 }
 
 // init inbound peer
-func (service *P2P) initInbondPeer(peer *Peer) {
+func (service *P2P) initInboundPeer(peer *Peer) {
 	defer service.removePendingPeer(peer)
 	err := peer.Start()
 	if err != nil {
-		log.Error("failed to start inbound peer as: %v", err)
+		log.Info("failed to start inbound peer as: %v", err)
 		return
 	}
 	service.addrManager.AddAddress(peer.GetAddr())
+	service.addrManager.ResetAddressAttemptInfo(peer.GetAddr()) //reset local attemptinfo that has successfully connected inbound peer.
 	if service.config.SeedMode {
 		// seed node close the connection after sending address message to new peer
 		addrs := service.addrManager.GetAddresses()
@@ -438,6 +439,7 @@ func (service *P2P) connectNormalPeers() {
 					continue
 				}
 				log.Info("start connecting To peer %s", addr.ToString())
+				service.addrManager.UpdateAddressAttemptInfo(addr)
 				peer := NewOutboundPeer(&service.PeerCom, addr, false, service.internalChan)
 				go service.connectPeer(peer)
 			}
@@ -455,6 +457,7 @@ func (service *P2P) connectNormalPeers() {
 					continue
 				}
 				log.Info("start connecting To peer %s", addr.ToString())
+				service.addrManager.UpdateAddressAttemptInfo(addr)
 				peer := NewOutboundPeer(&service.PeerCom, addr, false, service.internalChan)
 				go service.connectPeer(peer)
 			}
@@ -496,7 +499,7 @@ RETRY:
 	}
 	if err != nil {
 		service.removePendingPeer(peer)
-		log.Error("failed To connect To peer %s, as: %v", peer.GetAddr().ToString(), err)
+		log.Info("failed To connect To peer %s, as: %v", peer.GetAddr().ToString(), err)
 		if peer.IsPersistent() {
 			select {
 			case <-ticker.C:

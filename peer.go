@@ -94,6 +94,7 @@ func (peer *Peer) Start() error {
 		peer.conn.Start()
 		err = peer.handShakeWithOutBoundPeer()
 		if err != nil {
+			log.Info("failed to hand shake with outbound peer %s, as: %v", peer.addr.ToString(), err)
 			peer.conn.Stop()
 			return err
 		}
@@ -105,6 +106,7 @@ func (peer *Peer) Start() error {
 		peer.conn.Start()
 		err := peer.handShakeWithInBoundPeer()
 		if err != nil {
+			log.Info("failed to hand shake with inbound peer %s, as: %v", peer.addr.ToString(), err)
 			peer.conn.Stop()
 			return err
 		}
@@ -213,11 +215,11 @@ func (peer *Peer) readMessageWithType(msgType message.MessageType) (message.Mess
 		if msg.MsgType() == msgType {
 			return msg, nil
 		} else {
-			log.Error("error type message received From peer %s, expected: %v, actual: %v", peer.addr.ToString(), msgType, msg.MsgType())
+			log.Warn("error type message received From peer %s, expected: %v, actual: %v", peer.addr.ToString(), msgType, msg.MsgType())
 			return nil, fmt.Errorf("error type message received From peer %s, expected: %v, actual: %v", peer.addr.ToString(), msgType, msg.MsgType())
 		}
 	case <-timer.C:
-		log.Error("read %v type message From peer %s time out", msgType, peer.addr.ToString())
+		log.Warn("read %v type message From peer %s time out", msgType, peer.addr.ToString())
 		return nil, fmt.Errorf("read %v type message From peer %s time out", msgType, peer.addr.ToString())
 	}
 }
@@ -244,7 +246,7 @@ func (peer *Peer) initConn() error {
 	dialAddr := peer.addr.IP + ":" + strconv.Itoa(int(peer.addr.Port))
 	conn, err := net.Dial("tcp", dialAddr)
 	if err != nil {
-		log.Error("failed To dial To peer %s, as : %v", peer.addr.ToString(), err)
+		log.Info("failed To dial To peer %s, as : %v", peer.addr.ToString(), err)
 		return fmt.Errorf("failed To dial To peer %s, as : %v", peer.addr.ToString(), err)
 	}
 	peer.conn = NewPeerConn(conn, peer.internalChan)

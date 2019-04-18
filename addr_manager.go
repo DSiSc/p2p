@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -22,17 +23,26 @@ const (
 	// getAddrMax is the most addresses that we will send in response
 	// To a getAddr (in practise the most addresses we will return From a
 	// call To AddressCache()).
-	getAddrMax = 2500
+	getAddrMax             = 2500
+	maxAttemptNum          = 100
+	minimalAttemptInterval = time.Minute
 )
+
+//AttemptInfo represent the address attempt info
+type AttemptInfo struct {
+	AttemptNum      uint32       // number of attempt
+	LastAttemptTime atomic.Value // unix time of last attempt
+}
 
 // AddressManager is used To manage neighbor's address
 type AddressManager struct {
-	filePath  string
-	ourAddrs  sync.Map
-	addresses sync.Map
-	lock      sync.RWMutex
-	changed   bool
-	quitChan  chan interface{}
+	filePath           string
+	ourAddrs           sync.Map
+	addresses          sync.Map
+	addressAttemptInfo sync.Map
+	lock               sync.RWMutex
+	changed            bool
+	quitChan           chan interface{}
 }
 
 // NewAddressManager create an address manager instance
@@ -158,7 +168,9 @@ func (addrManager *AddressManager) GetAllAddress() []*common.NetAddress {
 	addrManager.addresses.Range(
 		func(key, value interface{}) bool {
 			addr := value.(*common.NetAddress)
-			addresses = append(addresses, addr)
+			if n, t := addrManager.GetAddressAttemptInfo(addr); n < maxAttemptNum && time.Now().Sub(t) > (time.Duration(n)*minimalAttemptInterval) {
+				addresses = append(addresses, addr)
+			}
 			return true
 		},
 	)
@@ -210,6 +222,34 @@ func (addrManager *AddressManager) Start() {
 // Stop stop address manager
 func (addrManager *AddressManager) Stop() {
 	close(addrManager.quitChan)
+}
+
+// GetAddressAttemptInfo get address attempt info
+func (addrManager *AddressManager) GetAddressAttemptInfo(addr *common.NetAddress) (attemptNum uint32, lastAttemptTime time.Time) {
+	if v, ok := addrManager.addressAttemptInfo.Load(addr.ToString()); ok {
+		attemptInfo := v.(*AttemptInfo)
+		return atomic.LoadUint32(&attemptInfo.AttemptNum), attemptInfo.LastAttemptTime.Load().(time.Time)
+	} else {
+		return 0, time.Now()
+	}
+}
+
+// UpdateAddressAttemptInfo update address attempt info
+func (addrManager *AddressManager) UpdateAddressAttemptInfo(addr *common.NetAddress) {
+	attemptInfo := &AttemptInfo{
+		AttemptNum: 1,
+	}
+	attemptInfo.LastAttemptTime.Store(time.Now())
+	if v, loaded := addrManager.addressAttemptInfo.LoadOrStore(addr.ToString(), attemptInfo); loaded {
+		attemptInfo := v.(*AttemptInfo)
+		atomic.AddUint32(&attemptInfo.AttemptNum, 1)
+		attemptInfo.LastAttemptTime.Store(time.Now())
+	}
+}
+
+// ResetAddressAttemptInfo reset address attempt info
+func (addrManager *AddressManager) ResetAddressAttemptInfo(addr *common.NetAddress) {
+	addrManager.addressAttemptInfo.Delete(addr.ToString())
 }
 
 // saveHandler save addresses To file periodically
