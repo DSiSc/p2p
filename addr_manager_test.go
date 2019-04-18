@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"testing"
+	"time"
 )
 
 func mockNetAddresses(num int) []*common.NetAddress {
@@ -206,4 +207,28 @@ func TestAddressManager_Save(t *testing.T) {
 		}
 	}
 	assert.True(exist)
+}
+
+func TestAddressManager_AddressAttemptInfo(t *testing.T) {
+	assert := assert.New(t)
+	addrManger := NewAddressManager(addressFile)
+	assert.NotNil(addrManger)
+	address := &common.NetAddress{
+		Protocol: "tcp",
+		IP:       "127.0.0.1",
+		Port:     8080,
+	}
+	attemptNum, _ := addrManger.GetAddressAttemptInfo(address)
+	assert.Equal(uint32(0), attemptNum)
+
+	timeBeforeUpdate := time.Now()
+	addrManger.UpdateAddressAttemptInfo(address)
+	attemptNum, lastAttemptTime := addrManger.GetAddressAttemptInfo(address)
+	assert.Equal(uint32(1), attemptNum)
+	assert.NotNil(timeBeforeUpdate.Before(lastAttemptTime))
+	assert.NotNil(time.Now().After(lastAttemptTime))
+
+	addrManger.ResetAddressAttemptInfo(address)
+	attemptNum, _ = addrManger.GetAddressAttemptInfo(address)
+	assert.Equal(uint32(0), attemptNum)
 }
