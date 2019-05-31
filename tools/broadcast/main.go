@@ -6,14 +6,14 @@ import (
 	"encoding/binary"
 	"flag"
 	"fmt"
-	"github.com/DSiSc/blockchain"
-	"github.com/DSiSc/blockchain/config"
 	"github.com/DSiSc/craft/types"
 	"github.com/DSiSc/p2p"
 	"github.com/DSiSc/p2p/common"
 	p2pconf "github.com/DSiSc/p2p/config"
 	"github.com/DSiSc/p2p/message"
 	"github.com/DSiSc/p2p/tools"
+	"github.com/DSiSc/repository"
+	"github.com/DSiSc/repository/config"
 	"math/rand"
 	"os"
 	"os/signal"
@@ -30,10 +30,10 @@ func sysSignalProcess() {
 }
 
 func main() {
-	chainConf := config.BlockChainConfig{
-		PluginName: blockchain.PLUGIN_MEMDB,
+	chainConf := config.RepositoryConfig{
+		PluginName: repository.PLUGIN_MEMDB,
 	}
-	blockchain.InitBlockChain(chainConf, &tools.P2PTestEventCenter{})
+	repository.InitRepository(chainConf, &tools.P2PTestEventCenter{})
 	var addrBookPath, listenAddress, persistentPeers, localAddrStr, displayServer, dnsSeeds string
 	var maxConnOutBound, maxConnInBound int
 	var traceMaster, disableDNSSeed, seedMode bool

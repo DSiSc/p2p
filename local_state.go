@@ -1,7 +1,7 @@
 package p2p
 
 import (
-	"github.com/DSiSc/blockchain"
+	"github.com/DSiSc/repository"
 	"sync/atomic"
 )
 
@@ -13,7 +13,7 @@ func init() {
 
 // LocalState get local current state
 func LocalState() uint64 {
-	bc, err := blockchain.NewLatestStateBlockChain()
+	bc, err := repository.NewLatestStateRepository()
 	if err != nil {
 		return localState.Load().(uint64)
 	}
