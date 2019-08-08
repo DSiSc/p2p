@@ -228,7 +228,7 @@ func TestPeer_Channel(t *testing.T) {
 		},
 		RespTo: respChan,
 	}
-	peer.Channel() <- sendMsg
+	peer.SendMsg(sendMsg)
 	time.Sleep(time.Second)
 	select {
 	case err := <-respChan:
@@ -294,7 +294,10 @@ func (this *testConn) RemoteAddr() net.Addr {
 	if doNothing {
 		//TODO
 	}
-	return nil
+	ip := net.ParseIP("192.168.1.1")
+	return &net.IPAddr{
+		IP: ip,
+	}
 }
 
 func (this *testConn) SetDeadline(t time.Time) error {

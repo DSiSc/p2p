@@ -59,13 +59,14 @@ func (peerConn *PeerConn) recvHandler() {
 			peerConn.disconnectNotify(err)
 			return
 		}
+		log.Debug("received message (type: %v, id: %x) from remote %s", msg.MsgType(), msg.MsgId(), peerConn.conn.RemoteAddr().String())
 		peerConn.recvChan <- msg
 	}
 }
 
 // SendMessage message To this PeerConn.
 func (peerConn *PeerConn) SendMessage(msg message.Message) error {
-	log.Debug("send %v type message To remote %s", msg.MsgType(), peerConn.conn.RemoteAddr().String())
+	log.Debug("send message (type:%d, id: %x) To remote %s", msg.MsgType(), msg.MsgId(), peerConn.conn.RemoteAddr().String())
 	buf, err := message.EncodeMessage(msg)
 	if err != nil {
 		log.Error("failed To encode message %v, as %v", msg, err)
