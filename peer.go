@@ -209,7 +209,8 @@ func (peer *Peer) readVersionAckMessage() error {
 
 // read specified type message From peer.
 func (peer *Peer) readMessageWithType(msgType message.MessageType) (message.Message, error) {
-	timer := time.NewTicker(5 * time.Second)
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
 	select {
 	case msg := <-peer.internalChan:
 		if msg.MsgType() == msgType {
@@ -346,8 +347,11 @@ func (peer *Peer) CurrentState() uint64 {
 }
 
 // Channel get peer's send channel
-func (peer *Peer) Channel() chan<- *InternalMsg {
-	return peer.sendChan
+func (peer *Peer) SendMsg(msg *InternalMsg) {
+	select {
+	case peer.sendChan <- msg:
+	case <-peer.quitChan:
+	}
 }
 
 // SetState update peer's state

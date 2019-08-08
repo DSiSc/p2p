@@ -10,6 +10,7 @@ import (
 	"github.com/DSiSc/p2p/message"
 	"github.com/DSiSc/p2p/nat"
 	"github.com/DSiSc/p2p/version"
+	"github.com/ivpusic/grpool"
 	"math/rand"
 	"net"
 	"strconv"
@@ -19,6 +20,7 @@ import (
 	"time"
 )
 
+const workerPoolSize = 100
 const (
 	persistentPeerRetryInterval = time.Minute
 	stallTickInterval           = 15 * time.Second
@@ -46,6 +48,7 @@ type P2P struct {
 	center        types.EventCenter
 	lock          sync.RWMutex
 	debugHandler  *DebugHandler
+	pool          *grpool.Pool
 }
 
 // NewP2P create a p2p service instance
@@ -82,6 +85,9 @@ func (service *P2P) Start() error {
 		log.Error("P2P already started")
 		return fmt.Errorf("P2P already started")
 	}
+	// create worker pool.
+	service.pool = grpool.NewPool(workerPoolSize, workerPoolSize/2)
+
 	service.addrManager.Start()
 
 	err := service.addrManager.AddLocalAddress(service.addr.Port)
@@ -152,6 +158,9 @@ func (service *P2P) Stop() {
 	}
 
 	service.isRunning = 0
+
+	service.pool.Release()
+
 	service.lock.Unlock()
 
 	// stop debug handler if exist
@@ -253,7 +262,9 @@ func (service *P2P) initInboundPeer(peer *Peer) {
 		addrMsg := &message.Addr{
 			NetAddresses: addrs,
 		}
-		service.sendMsgSync(peer, addrMsg)
+		if err := service.sendMsgSync(peer, addrMsg); err != nil {
+			log.Error("failed to send address message to peer %s, as: %v", peer.GetAddr().ToString(), err)
+		}
 		peer.Stop()
 	} else {
 		service.addInBoundPeer(peer)
@@ -304,9 +315,12 @@ func (service *P2P) addPeer(inbound bool, peer *Peer) error {
 
 // handle stall detection of the message response
 func (service *P2P) stallHandler() {
-	stallTicker := time.NewTicker(stallTickInterval)
+	stallTimer := time.NewTimer(stallTickInterval)
+	defer stallTimer.Stop()
+
 	pendingResponses := make(map[*common.NetAddress]map[message.MessageType]time.Time)
 	for {
+		//register pending response
 		select {
 		case msg := <-service.stallChan:
 			if msg == nil {
@@ -325,7 +339,13 @@ func (service *P2P) stallHandler() {
 				}
 				removePendingRespMsg(pendingResponses, msg)
 			}
-		case <-stallTicker.C:
+		case <-service.quitChan:
+			return
+		}
+
+		// check timeout response
+		select {
+		case <-stallTimer.C:
 			now := time.Now()
 			timeOutAddrs := make([]*common.NetAddress, 0)
 			for addr, pendings := range pendingResponses {
@@ -342,8 +362,10 @@ func (service *P2P) stallHandler() {
 			for _, timeOutAddr := range timeOutAddrs {
 				delete(pendingResponses, timeOutAddr)
 			}
+			stallTimer.Reset(stallTickInterval)
 		case <-service.quitChan:
 			return
+		default:
 		}
 	}
 }
@@ -362,7 +384,9 @@ func addPendingRespMsg(pendingQueue map[*common.NetAddress]map[message.MessageTy
 	if pendingQueue[msg.To] == nil {
 		pendingQueue[msg.To] = make(map[message.MessageType]time.Time)
 	}
-	pendingQueue[msg.To][msg.Payload.ResponseMsgType()] = deadline
+	if _, ok := pendingQueue[msg.To][msg.Payload.ResponseMsgType()]; !ok {
+		pendingQueue[msg.To][msg.Payload.ResponseMsgType()] = deadline
+	}
 }
 
 // remove message when receiving corresponding response.
@@ -428,14 +452,25 @@ func (service *P2P) connectDnsSeeds() {
 
 // connect To dns seeds
 func (service *P2P) connectNormalPeers() {
-	log.Debug("start connection To normal peers")
+	log.Info("start connection To normal peers")
+	reconnectInterval := 2 * time.Minute
+	timer := time.NewTimer(0)
+	defer timer.Stop()
 	// random select peer To connect
-	ticker := time.NewTicker(30 * time.Second)
 	attemptTimes := 30 * (service.config.MaxConnOutBound - service.GetOutBountPeersCount())
 	for {
+		//wait for time out
+		select {
+		case <-timer.C:
+		case <-service.quitChan:
+			return
+		}
+
+		log.Info("start to connect to normal peers, current peer num: inbound-%d, outbound-%d.", service.GetInBountPeersCount(), service.GetOutBountPeersCount())
 		if service.addrManager.GetAddressCount()-len(service.GetPeers()) < service.config.MaxConnOutBound {
 			for _, addr := range service.addrManager.GetAllAddress() {
 				if service.containsPeer(addr) {
+					log.Debug("peer with addr %s already in our neighbor list", addr.ToString())
 					continue
 				}
 				log.Info("start connecting To peer %s", addr.ToString())
@@ -463,12 +498,8 @@ func (service *P2P) connectNormalPeers() {
 			}
 		}
 
-		//wait for time out
-		select {
-		case <-ticker.C:
-		case <-service.quitChan:
-			return
-		}
+		//reset timer
+		timer.Reset(reconnectInterval)
 	}
 }
 
@@ -488,7 +519,6 @@ func (service *P2P) containsPeer(addr *common.NetAddress) bool {
 
 // connect To a peer
 func (service *P2P) connectPeer(peer *Peer) {
-	ticker := time.NewTicker(persistentPeerRetryInterval)
 RETRY:
 	err := service.addPendingPeer(peer)
 	if err != nil {
@@ -501,10 +531,13 @@ RETRY:
 		service.removePendingPeer(peer)
 		log.Info("failed To connect To peer %s, as: %v", peer.GetAddr().ToString(), err)
 		if peer.IsPersistent() {
+			timer := time.NewTimer(persistentPeerRetryInterval)
 			select {
-			case <-ticker.C:
+			case <-timer.C:
+				timer.Stop()
 				goto RETRY
 			case <-service.quitChan:
+				timer.Stop()
 				return
 			}
 		}
@@ -551,8 +584,16 @@ func (service *P2P) clearPendingResponse(peer *Peer) {
 
 // addresses handler(request more addresses From neighbor peers)
 func (service *P2P) addressHandler() {
-	ticker := time.NewTicker(30 * time.Second)
+	retryInterval := 30 * time.Second
+	timer := time.NewTimer(0)
+	defer timer.Stop()
 	for {
+		select {
+		case <-timer.C:
+		case <-service.quitChan:
+			return
+		}
+
 		// get more address
 		if service.addrManager.NeedMoreAddrs() {
 			peers := service.GetPeers()
@@ -561,12 +602,7 @@ func (service *P2P) addressHandler() {
 				service.sendMsgAsync(peers[rand.Intn(len(peers))], addReq)
 			}
 		}
-
-		select {
-		case <-ticker.C:
-		case <-service.quitChan:
-			return
-		}
+		timer.Reset(retryInterval)
 	}
 }
 
@@ -622,7 +658,8 @@ func (service *P2P) recvHandler() {
 
 // send hear beat message periodically
 func (service *P2P) heartBeatHandler() {
-	timer := time.NewTicker(heartBeatInterval)
+	timer := time.NewTimer(heartBeatInterval)
+	defer timer.Stop()
 	for {
 		select {
 		case <-timer.C:
@@ -633,16 +670,22 @@ func (service *P2P) heartBeatHandler() {
 		case <-service.quitChan:
 			return
 		}
+		timer.Reset(heartBeatInterval)
 	}
 }
 
 // BroadCast broad cast message To all neighbor peers
 func (service *P2P) BroadCast(msg message.Message) {
+	log.Debug("broadcas message (type: %v, id: %x) to neighbors", msg.MsgType(), msg.MsgId())
 	service.outbountPeers.Range(
 		func(key, value interface{}) bool {
 			peer := value.(*Peer)
 			if !peer.KnownMsg(msg) {
-				go service.sendMsgAsync(peer, msg)
+				p := peer
+				m := msg
+				service.pool.JobQueue <- func() {
+					service.sendMsgAsync(p, m)
+				}
 			}
 			return true
 		},
@@ -651,7 +694,11 @@ func (service *P2P) BroadCast(msg message.Message) {
 		func(key, value interface{}) bool {
 			peer := value.(*Peer)
 			if !peer.KnownMsg(msg) {
-				go service.sendMsgAsync(peer, msg)
+				p := peer
+				m := msg
+				service.pool.JobQueue <- func() {
+					service.sendMsgAsync(p, m)
+				}
 			}
 			return true
 		},
@@ -719,6 +766,7 @@ func (service *P2P) sendMsgSync(peer *Peer, msg message.Message) error {
 
 // sendMsg send message To a peer.
 func (service *P2P) sendMsg(peer *Peer, msg message.Message, sync bool) error {
+	log.Debug("send message (type: %v, id: %x) to peer %s", msg.MsgType(), msg.MsgId(), peer.GetAddr().ToString())
 	message := &InternalMsg{
 		service.addrManager.OurAddresses()[0],
 		peer.GetAddr(),
@@ -728,13 +776,19 @@ func (service *P2P) sendMsg(peer *Peer, msg message.Message, sync bool) error {
 	if sync {
 		message.RespTo = make(chan interface{})
 	}
-	peer.Channel() <- message
+	peer.SendMsg(message)
 	service.registerPendingResp(message)
 
 	if message.RespTo != nil {
-		resp := <-message.RespTo
-		if _, ok := resp.(error); ok {
-			return resp.(error)
+		timer := time.NewTimer(30 * time.Second)
+		defer timer.Stop()
+		select {
+		case resp := <-message.RespTo:
+			if _, ok := resp.(error); ok {
+				return resp.(error)
+			}
+		case <-timer.C:
+			return fmt.Errorf("receive message(%v) response from %s timeout", msg.MsgType(), peer.GetAddr().ToString())
 		}
 	}
 	return nil
