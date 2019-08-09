@@ -77,6 +77,7 @@ Examples:
 		DisableDNSSeed:   disableDNSSeed,
 		DNSSeeds:         dnsSeeds,
 		Service:          p2pconf.SFNodeBroadCastTest,
+		WorkerPoolSize:   1000,
 	}
 
 	// listen address

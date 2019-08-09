@@ -20,7 +20,6 @@ import (
 	"time"
 )
 
-const workerPoolSize = 100
 const (
 	persistentPeerRetryInterval = time.Minute
 	stallTickInterval           = 15 * time.Second
@@ -86,7 +85,7 @@ func (service *P2P) Start() error {
 		return fmt.Errorf("P2P already started")
 	}
 	// create worker pool.
-	service.pool = grpool.NewPool(workerPoolSize, workerPoolSize/2)
+	service.pool = grpool.NewPool(service.config.WorkerPoolSize, service.config.WorkerPoolSize/2)
 
 	service.addrManager.Start()
 
