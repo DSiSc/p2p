@@ -51,6 +51,7 @@ Examples:
 		MaxConnOutBound:  maxConnOutBound,
 		MaxConnInBound:   maxConnInBound,
 		SeedMode:         true,
+		WorkerPoolSize:   1000,
 	}
 	dnsSeed, err := p2p.NewP2P(conf, nil)
 	if err != nil {
