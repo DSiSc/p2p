@@ -294,7 +294,7 @@ func (peer *Peer) recvHandler() {
 				To:      peer.serverInfo.addr,
 				Payload: msg,
 			}
-			peer.recvChan <- imsg
+			peer.receivedMsg(imsg)
 			log.Debug("peer %s send %v type message To message channel", peer.GetAddr().ToString(), msg.MsgType())
 		}
 	}
@@ -315,9 +315,6 @@ func (peer *Peer) sendHandler() {
 				} else {
 					msg.RespTo <- nilError
 				}
-			}
-			if err != nil {
-				peer.disconnectNotify(err)
 			}
 		case <-peer.quitChan:
 			return
@@ -347,10 +344,12 @@ func (peer *Peer) CurrentState() uint64 {
 }
 
 // Channel get peer's send channel
-func (peer *Peer) SendMsg(msg *InternalMsg) {
+func (peer *Peer) SendMsg(msg *InternalMsg) error {
 	select {
 	case peer.sendChan <- msg:
+		return nil
 	case <-peer.quitChan:
+		return fmt.Errorf("peer %s have stopped", peer.GetAddr().ToString())
 	}
 }
 
@@ -389,5 +388,14 @@ func (peer *Peer) disconnectNotify(err error) {
 		To:      peer.serverInfo.addr,
 		Payload: disconnectMsg,
 	}
-	peer.recvChan <- msg
+	peer.receivedMsg(msg)
+}
+
+// received a message from remote
+func (peer *Peer) receivedMsg(msg *InternalMsg) {
+	select {
+	case peer.recvChan <- msg:
+	case <-peer.quitChan:
+		log.Warn("Peer have been closed")
+	}
 }

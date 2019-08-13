@@ -44,8 +44,8 @@ func (peerConn *PeerConn) Stop() {
 	if peerConn.isRunning == 0 {
 		return
 	}
-	peerConn.conn.Close()
 	close(peerConn.quitChan)
+	peerConn.conn.Close()
 }
 
 // message receive handler
@@ -59,8 +59,7 @@ func (peerConn *PeerConn) recvHandler() {
 			peerConn.disconnectNotify(err)
 			return
 		}
-		log.Debug("received message (type: %v, id: %x) from remote %s", msg.MsgType(), msg.MsgId(), peerConn.conn.RemoteAddr().String())
-		peerConn.recvChan <- msg
+		peerConn.receivedMsg(msg)
 	}
 }
 
@@ -89,5 +88,15 @@ func (peerConn *PeerConn) disconnectNotify(err error) {
 	disconnectMsg := &peerDisconnecMsg{
 		err,
 	}
-	peerConn.recvChan <- disconnectMsg
+	peerConn.receivedMsg(disconnectMsg)
+}
+
+// received a message from remote
+func (peerConn *PeerConn) receivedMsg(msg message.Message) {
+	log.Debug("received message (type: %v, id: %x) from remote %s", msg.MsgType(), msg.MsgId(), peerConn.conn.RemoteAddr().String())
+	select {
+	case peerConn.recvChan <- msg:
+	case <-peerConn.quitChan:
+		log.Warn("Peer Connection have been closed")
+	}
 }
