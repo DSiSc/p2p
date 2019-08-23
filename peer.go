@@ -16,7 +16,7 @@ import (
 
 const (
 	MAX_BUF_LEN    = 1024 * 256 //the maximum buffer To receive message
-	WRITE_DEADLINE = 5          //deadline of conn write
+	WRITE_DEADLINE = 60         //deadline of conn write
 
 )
 
