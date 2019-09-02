@@ -51,9 +51,10 @@ func (peerConn *PeerConn) Stop() {
 // message receive handler
 func (peerConn *PeerConn) recvHandler() {
 	reader := bufio.NewReaderSize(peerConn.conn, MAX_BUF_LEN)
+	buffer := make([]byte, MAX_BODY_LEN)
 	for {
 		// read new message From connection
-		msg, err := message.ReadMessage(reader)
+		msg, err := message.ReadMessage(reader, buffer)
 		if err != nil {
 			log.Error("failed To read message From remote %s, as: %v", peerConn.conn.RemoteAddr().String(), err)
 			peerConn.disconnectNotify(err)

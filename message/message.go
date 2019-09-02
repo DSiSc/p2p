@@ -80,14 +80,18 @@ func encodeMessageHeader(header *messageHeader) ([]byte, error) {
 }
 
 // ReadMessage read message
-func ReadMessage(reader io.Reader) (Message, error) {
+func ReadMessage(reader io.Reader, bodyBuffer []byte) (Message, error) {
 	header, err := readMessageHeader(reader)
 	if err != nil {
 		return nil, err
 	}
 
-	body := make([]byte, header.Length)
-	_, err = io.ReadFull(reader, body)
+	if header.Length > uint32(len(bodyBuffer)) {
+		expand := make([]byte, header.Length-uint32(len(bodyBuffer)))
+		bodyBuffer = append(bodyBuffer, expand...)
+	}
+
+	_, err = io.ReadFull(reader, bodyBuffer[:header.Length])
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +101,7 @@ func ReadMessage(reader io.Reader) (Message, error) {
 		return nil, err
 	}
 
-	err = json.Unmarshal(body, msg)
+	err = json.Unmarshal(bodyBuffer[:header.Length], msg)
 	if err != nil {
 		return nil, err
 	}

@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	MAX_BUF_LEN    = 1024 * 256 //the maximum buffer To receive message
-	WRITE_DEADLINE = 60         //deadline of conn write
+	MAX_BUF_LEN    = 1024 * 256      //the maximum buffer To receive message
+	MAX_BODY_LEN   = 1024 * 1024 * 5 //the maximum body To receive message
+	WRITE_DEADLINE = 60              //deadline of conn write
 
 )
 
