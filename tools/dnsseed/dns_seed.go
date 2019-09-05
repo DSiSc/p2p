@@ -55,7 +55,6 @@ func main() {
 		MaxConnOutBound:  node.MaxConnOutBound,
 		MaxConnInBound:   node.MaxConnInBound,
 		SeedMode:         true,
-		WorkerPoolSize:   1000,
 	}
 
 	// create p2p

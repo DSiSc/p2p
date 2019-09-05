@@ -26,7 +26,6 @@ func mockConfig() *config.P2PConfig {
 		MaxConnInBound:   20,
 		PersistentPeers:  "",
 		Service:          config.SFNodeTX,
-		WorkerPoolSize:   10,
 	}
 }
 

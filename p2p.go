@@ -10,7 +10,6 @@ import (
 	"github.com/DSiSc/p2p/message"
 	"github.com/DSiSc/p2p/nat"
 	"github.com/DSiSc/p2p/version"
-	"github.com/ivpusic/grpool"
 	"math/rand"
 	"net"
 	"strconv"
@@ -47,7 +46,6 @@ type P2P struct {
 	center        types.EventCenter
 	lock          sync.RWMutex
 	debugHandler  *DebugHandler
-	pool          *grpool.Pool
 }
 
 // NewP2P create a p2p service instance
@@ -84,8 +82,6 @@ func (service *P2P) Start() error {
 		log.Error("P2P already started")
 		return fmt.Errorf("P2P already started")
 	}
-	// create worker pool.
-	service.pool = grpool.NewPool(service.config.WorkerPoolSize, service.config.WorkerPoolSize/2)
 
 	service.addrManager.Start()
 
@@ -157,8 +153,6 @@ func (service *P2P) Stop() {
 	}
 
 	service.isRunning = 0
-
-	service.pool.Release()
 
 	service.lock.Unlock()
 
@@ -680,11 +674,7 @@ func (service *P2P) BroadCast(msg message.Message) {
 		func(key, value interface{}) bool {
 			peer := value.(*Peer)
 			if !peer.KnownMsg(msg) {
-				p := peer
-				m := msg
-				service.pool.JobQueue <- func() {
-					service.sendMsgAsync(p, m)
-				}
+				go service.sendMsgAsync(peer, msg)
 			}
 			return true
 		},
@@ -693,11 +683,7 @@ func (service *P2P) BroadCast(msg message.Message) {
 		func(key, value interface{}) bool {
 			peer := value.(*Peer)
 			if !peer.KnownMsg(msg) {
-				p := peer
-				m := msg
-				service.pool.JobQueue <- func() {
-					service.sendMsgAsync(p, m)
-				}
+				go service.sendMsgAsync(peer, msg)
 			}
 			return true
 		},

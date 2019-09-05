@@ -72,8 +72,7 @@ func (peerConn *PeerConn) SendMessage(msg message.Message) error {
 		return err
 	}
 
-	nCount := len(buf)
-	peerConn.conn.SetWriteDeadline(time.Now().Add(time.Duration(nCount*WRITE_DEADLINE) * time.Second))
+	peerConn.conn.SetWriteDeadline(time.Now().Add(time.Duration(WRITE_DEADLINE) * time.Second))
 	_, err = peerConn.conn.Write(buf)
 	if err != nil {
 		log.Error("failed To send raw message To remote %s, as: %v", peerConn.conn.RemoteAddr().String(), err)
