@@ -32,5 +32,4 @@ type P2PConfig struct {
 	DisableDNSSeed   bool        //Disable DNS seeding for peers
 	DNSSeeds         string      //list of DNS seeds for the network that are used as one method to discover peers
 	Service          ServiceFlag // service supported by this peer.
-	WorkerPoolSize   int         // worker pool size
 }
